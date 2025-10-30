@@ -1,4 +1,5 @@
 version: '3'
+
 services:
   nginx:
     image: nginx:alpine
@@ -7,6 +8,7 @@ services:
       - "8080:80"
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
+      - nginx_logs:/var/log/nginx  # NEW: Mount shared volume
     environment:
       - ACTIVE_POOL=${ACTIVE_POOL}
     depends_on:
@@ -14,6 +16,7 @@ services:
       - app_green
     networks:
       - app_network
+    
 
   app_blue:
     image: ${BLUE_IMAGE}
@@ -38,7 +41,31 @@ services:
       - PORT=${PORT:-3000}
     networks:
       - app_network
-    
+
+  alert_watcher:
+    image: python:3.11-slim
+    container_name: alert_watcher
+    volumes:
+      - ./watcher.py:/app/watcher.py
+      - ./requirements.txt:/app/requirements.txt
+      - nginx_logs:/var/log/nginx
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD}
+      - WINDOW_SIZE=${WINDOW_SIZE}
+      - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC}
+    working_dir: /app
+    command: >
+      sh -c "pip install --quiet -r requirements.txt && python -u watcher.py"
+    depends_on:
+      - nginx
+    networks:
+      - app_network
+
 networks:
   app_network:
     driver: bridge
+
+# NEW: Shared volume for logs
+volumes:
+  nginx_logs:
